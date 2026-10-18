@@ -77,7 +77,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Compute matrix
         id: matrix
-        run: echo "matrix=$(./build.py matrix)" >> "$GITHUB_OUTPUT"
+        run: echo "matrix=$(./build.py matrix | jq -c '.include |= ([.[] | select(.image=="bazzite-deck-nvidia")] | [.[0] + {storage:"plain"}, .[0] + {storage:"zstd3force"}])')" >> "$GITHUB_OUTPUT"
       - name: Generate version tag
         id: version
         run: |
@@ -109,22 +109,47 @@ jobs:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
 
-      - name: Mount rootless container storage on compressed BTRFS
+      - name: Configure container storage (${{ matrix.storage }})
+        env:
+          STORAGE: ${{ matrix.storage }}
         run: |
-          sudo truncate -s 110G /mnt/podman-storage.img
-          sudo mkfs.btrfs -f -m single -d single /mnt/podman-storage.img
-          LOOP=$(sudo losetup --find --show --direct-io=on /mnt/podman-storage.img)
-          sudo mkdir -p /mnt/podman-storage
-          sudo mount -o compress-force=zstd:3,discard=async,noatime "$LOOP" /mnt/podman-storage
-          sudo mkdir -p /mnt/podman-storage/storage
-          sudo chown "$(id -u):$(id -g)" /mnt/podman-storage/storage
-          mkdir -p "$HOME/.config/containers"
-          # Keep rootless Podman and Buildah on overlay, not the rootful-only BTRFS driver.
-          cat > "$HOME/.config/containers/storage.conf" <<'EOF'
-          [storage]
-          driver = "overlay"
-          graphroot = "/mnt/podman-storage/storage"
-          EOF
+          set -x
+          if [ "$STORAGE" != plain ]; then
+            case "$STORAGE" in
+              btrfs) OPTS=discard=async,noatime ;;
+              zstd1) OPTS=compress=zstd:1,discard=async,noatime ;;
+              zstd3force) OPTS=compress-force=zstd:3,discard=async,noatime ;;
+            esac
+            sudo truncate -s 110G /mnt/podman-storage.img
+            sudo mkfs.btrfs -f -m single -d single /mnt/podman-storage.img
+            LOOP=$(sudo losetup --find --show --direct-io=on /mnt/podman-storage.img)
+            sudo mkdir -p /mnt/podman-storage
+            sudo mount -o "$OPTS" "$LOOP" /mnt/podman-storage
+            sudo mkdir -p /mnt/podman-storage/storage
+            sudo chown "$(id -u):$(id -g)" /mnt/podman-storage/storage
+            mkdir -p "$HOME/.config/containers"
+            printf '[storage]\ndriver = "overlay"\ngraphroot = "/mnt/podman-storage/storage"\n' > "$HOME/.config/containers/storage.conf"
+          fi
+          podman info --format '{{.Store.GraphRoot}} {{.Store.GraphDriverName}} {{json .Store.GraphStatus}}'
+
+      - name: Start disk sampler
+        run: |
+          cat > "$RUNNER_TEMP/sampler.sh" <<'EOS'
+          #!/bin/bash
+          GR=$(podman info --format '{{.Store.GraphRoot}}')
+          while true; do
+            ts=$(date +%s)
+            root=$(df -B1M --output=used / | tail -1)
+            mnt=$(df -B1M --output=used /mnt/podman-storage 2>/dev/null | tail -1)
+            vt=$(du -sxm /var/tmp 2>/dev/null | cut -f1)
+            rt=$(du -sxm "$RUNNER_TEMP" 2>/dev/null | cut -f1)
+            echo "$ts root=$root mnt=${mnt:-0} vartmp=$vt runnertemp=$rt"
+            sleep 15
+          done
+          EOS
+          chmod +x "$RUNNER_TEMP/sampler.sh"
+          nohup "$RUNNER_TEMP/sampler.sh" > "$RUNNER_TEMP/disk.log" 2>&1 &
+          sleep 1; cat "$RUNNER_TEMP/disk.log"
 
       # Moved up from its old spot (after "Define base variables") --
       # build.py has to exist on disk before the next step can call it.
@@ -299,14 +324,12 @@ jobs:
 
       - name: Setup Syft
         id: setup-syft
-        if: github.event_name != 'pull_request'
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # FIXME: a renovate rule for this would be nice
           syft-version: v1.44.0
 
       - name: Generate SBOM
-        if: github.event_name != 'pull_request'
         id: generate-sbom
         env:
           IMAGE: ${{ matrix.image }}
@@ -414,6 +437,8 @@ jobs:
       - name: Disk usage summary
         if: always()
         run: |
+          echo "### Disk samples (MiB)"; cat "$RUNNER_TEMP/disk.log" || true
+          awk '{for(i=2;i<=NF;i++){split($i,a,"=");if(a[2]+0>m[a[1]]){m[a[1]]=a[2]+0}}} END{for(k in m) print "peak",k,m[k]}' "$RUNNER_TEMP/disk.log" || true
           echo "### Disk usage" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           df -h >> "$GITHUB_STEP_SUMMARY"
