@@ -153,4 +153,7 @@ fi
 
 # Normalize filesystem timestamps without affecting chunkah's layer plan.
 # See: https://github.com/coreos/chunkah/issues/160
-find /usr /etc /opt -exec touch -h -a -m -d '1970-01-01T00:00:00Z' {} +
+# Only touch entries not already at the epoch: changing metadata forces an
+# overlayfs copy-up of the whole file (rootless overlay has no metacopy), so
+# touching everything duplicates the entire base image into this layer.
+find /usr /etc /opt -newermt '1970-01-01T00:00:00Z' -exec touch -h -a -m -d '1970-01-01T00:00:00Z' {} +
