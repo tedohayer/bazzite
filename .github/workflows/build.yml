@@ -77,7 +77,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Compute matrix
         id: matrix
-        run: echo "matrix=$(./build.py matrix)" >> "$GITHUB_OUTPUT"
+        run: echo "matrix=$(./build.py matrix | jq -c '.include |= [.[] | select(.image=="bazzite-deck-nvidia" or .image=="bazzite")]')" >> "$GITHUB_OUTPUT"
       - name: Generate version tag
         id: version
         run: |
@@ -282,14 +282,24 @@ jobs:
 
       - name: Setup Syft
         id: setup-syft
-        if: github.event_name != 'pull_request'
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # FIXME: a renovate rule for this would be nice
           syft-version: v1.44.0
 
+      - name: "exp: start resource sampler"
+        run: |
+          cat > "$RUNNER_TEMP/sampler.sh" <<'EOS'
+          #!/bin/bash
+          while true; do
+            echo "$(date +%H:%M:%S) mem_used_mb=$(free -m | awk '/^Mem:/{print $3}') avail_mb=$(free -m | awk '/^Mem:/{print $7}') root_used=$(df -BG --output=used / | tail -1 | tr -d ' ') root_avail=$(df -BG --output=avail / | tail -1 | tr -d ' ')"
+            sleep 10
+          done
+          EOS
+          chmod +x "$RUNNER_TEMP/sampler.sh"
+          nohup "$RUNNER_TEMP/sampler.sh" > "$RUNNER_TEMP/resources.log" 2>&1 &
+
       - name: Generate SBOM
-        if: github.event_name != 'pull_request'
         id: generate-sbom
         env:
           IMAGE: ${{ matrix.image }}
@@ -305,6 +315,39 @@ jobs:
           sbom="$(jq -er .sbom sbom.json)"
           du -sh "${sbom}"
           echo "SBOM=${sbom}" >> "$GITHUB_OUTPUT"
+
+      - name: "exp: old export-based SBOM for comparison"
+        env:
+          IMAGE: ${{ matrix.image }}
+          VERSION_TAG: ${{ steps.resolve.outputs.source_version_tag }}
+          SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+          NEW_SBOM: ${{ steps.generate-sbom.outputs.SBOM }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o old_build.py \
+            https://raw.githubusercontent.com/ublue-os/bazzite/c500b43388e393001a1570f0eb8a0a1fa8588913/build.py
+          start=$(date +%s)
+          python3 ./old_build.py sbom --image "$IMAGE" --chunked-image localhost/chunked-img \
+            --version-tag "$VERSION_TAG" --container-mgr podman --syft-cmd "$SYFT_CMD" > old-sbom.json
+          echo "old sbom total: $(( $(date +%s) - start ))s"
+          old="$(jq -er .sbom old-sbom.json)"
+          mkdir -p "$RUNNER_TEMP/sboms"
+          cp "$NEW_SBOM" "$RUNNER_TEMP/sboms/new.json"; cp "$old" "$RUNNER_TEMP/sboms/old.json"
+          pkgs() { jq -r '.artifacts[] | "\(.type) \(.name) \(.version) \(.purl)"' "$1" | sort; }
+          pkgs "$NEW_SBOM" > "$RUNNER_TEMP/sboms/new.pkgs"; pkgs "$old" > "$RUNNER_TEMP/sboms/old.pkgs"
+          wc -l "$RUNNER_TEMP"/sboms/*.pkgs
+          ls -la "$RUNNER_TEMP"/sboms
+          diff "$RUNNER_TEMP/sboms/old.pkgs" "$RUNNER_TEMP/sboms/new.pkgs" && echo "PACKAGE LISTS IDENTICAL" || true
+
+      - name: "exp: resource log"
+        if: always()
+        run: cat "$RUNNER_TEMP/resources.log" || true
+
+      - name: "exp: upload SBOMs"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sboms-${{ matrix.image }}
+          path: ${{ runner.temp }}/sboms
 
       - name: Install dgoss
         run: |
