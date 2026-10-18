@@ -794,49 +794,49 @@ def cmd_rechunk(args: argparse.Namespace) -> int:
         run(["podman", "rmi", "-f", f"localhost/{args.raw_image}"], dry_run=args.dry_run, check=False)
 
         if args.dry_run:
-            print(json.dumps({"ref": f"containers-storage:{args.chunked_image}"}))
+            print(json.dumps(rechunk_result(args)))
             return 0
 
         pulled = run(["podman", "pull", f"oci:{rechunk_dir}/chunked"], capture=True)
         chunked_id = pulled.stdout.strip()
         run(["podman", "tag", chunked_id, args.chunked_image])
 
-    print(json.dumps({"ref": f"containers-storage:{args.chunked_image}"}))
+        if args.oci_dir:
+            # Keep chunkah's OCI layout for `sbom`, which scans it directly.
+            shutil.rmtree(args.oci_dir, ignore_errors=True)
+            shutil.move(f"{rechunk_dir}/chunked", args.oci_dir)
+
+    print(json.dumps(rechunk_result(args)))
     return 0
 
 
-def cmd_sbom(args: argparse.Namespace) -> int:
-    """Export the chunked image's rootfs and run syft over it to produce an SBOM."""
-    oci_dir = Path(tempfile.mkdtemp(prefix="image-oci-", dir=scratch_dir()))
-    rootfs = oci_dir / "rootfs"
-    rootfs.mkdir(parents=True)
-    try:
-        run(
-            [args.container_mgr, "container", "create", "--replace", "--name", args.image, args.chunked_image],
-            dry_run=args.dry_run,
-        )
-        export_cmd = [args.container_mgr, "export", args.image]
-        tar_cmd = ["tar", "-C", str(rootfs), "--no-same-owner", "-xf", "-"]
-        log.info("+ %s | %s", " ".join(export_cmd), " ".join(tar_cmd))
-        if not args.dry_run:
-            export = subprocess.Popen(export_cmd, stdout=subprocess.PIPE)
-            subprocess.run(tar_cmd, stdin=export.stdout, check=True)
-            export.stdout.close()
-            export.wait()
-        run([args.container_mgr, "container", "rm", args.image], dry_run=args.dry_run, check=False)
+def rechunk_result(args: argparse.Namespace) -> dict:
+    result = {"ref": f"containers-storage:{args.chunked_image}"}
+    if args.oci_dir:
+        result["oci_dir"] = str(args.oci_dir)
+    return result
 
-        sbom_path = Path(tempfile.mkdtemp(prefix="sbom-")) / "sbom.json"
-        source_name = f"{args.image}-{args.version_tag}"
-        env = {"SYFT_PARALLELISM": str((os.cpu_count() or 1) * 2)}
-        run(
-            [args.syft_cmd, "--source-name", source_name, str(rootfs), "-o", f"syft-json={sbom_path}"],
-            dry_run=args.dry_run,
-            env=env,
-        )
-        print(json.dumps({"sbom": str(sbom_path)}))
-        return 0
-    finally:
-        shutil.rmtree(oci_dir, ignore_errors=True)
+
+def cmd_sbom(args: argparse.Namespace) -> int:
+    """Run syft over the OCI layout chunkah wrote (`rechunk --oci-dir`).
+
+    Scanning the layout directly avoids writing the whole rootfs back to
+    disk with `podman export | tar -x` first.
+    """
+    sbom_path = Path(tempfile.mkdtemp(prefix="sbom-")) / "sbom.json"
+    source_name = f"{args.image}-{args.version_tag}"
+    env = {"SYFT_PARALLELISM": str((os.cpu_count() or 1) * 2)}
+    # syft unpacks each layer into its temp dir; keep that off the small
+    # root disk on Actions runners.
+    if tmp := scratch_dir():
+        env["TMPDIR"] = tmp
+    run(
+        [args.syft_cmd, "--source-name", source_name, f"oci-dir:{args.oci_dir}", "-o", f"syft-json={sbom_path}"],
+        dry_run=args.dry_run,
+        env=env,
+    )
+    print(json.dumps({"sbom": str(sbom_path)}))
+    return 0
 
 
 def cmd_test(args: argparse.Namespace) -> int:
@@ -969,7 +969,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
 
 
 def scratch_dir() -> str | None:
-    """Where to put multi-GiB scratch output (chunked OCI dirs, exported rootfs).
+    """Where to put multi-GiB scratch output (chunked OCI dirs, syft's unpacked layers).
 
     On Actions runners /tmp sits on the small root disk -- the largest images
     fail chunkah with "Disk quota exceeded" there -- so use $RUNNER_TEMP when
@@ -1050,13 +1050,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_rechunk.add_argument("--labels-file", default=None)
     p_rechunk.add_argument("--max-layers", type=int, default=256)
+    p_rechunk.add_argument("--oci-dir", default=None, help="keep chunkah's OCI layout here (for sbom)")
     p_rechunk.set_defaults(func=cmd_rechunk)
 
     p_sbom = sub.add_parser("sbom", help="generate a syft SBOM for a rechunked image")
     p_sbom.add_argument("--image", default=DEFAULT_IMAGE, choices=sorted(IMAGES))
-    p_sbom.add_argument("--chunked-image", default="localhost/chunked-img")
+    p_sbom.add_argument("--oci-dir", required=True, help="OCI layout from `rechunk --oci-dir`")
     p_sbom.add_argument("--version-tag", default="dev")
-    p_sbom.add_argument("--container-mgr", default=None)
     p_sbom.add_argument("--syft-cmd", default="syft")
     p_sbom.set_defaults(func=cmd_sbom)
 

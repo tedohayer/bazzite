@@ -398,6 +398,33 @@ def test_rechunk_no_privileged_flag(caplog):
     assert "--privileged" not in caplog.text
 
 
+def test_rechunk_keeps_oci_dir_when_asked(capsys):
+    args = b.build_parser().parse_args(["--dry-run", "rechunk", "--oci-dir", "/scratch/chunked-oci"])
+    assert b.cmd_rechunk(args) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "ref": "containers-storage:localhost/chunked-img",
+        "oci_dir": "/scratch/chunked-oci",
+    }
+
+
+def test_sbom_scans_oci_dir(capsys, caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="build")
+    monkeypatch.delenv("RUNNER_TEMP", raising=False)
+    args = b.build_parser().parse_args(
+        ["--dry-run", "sbom", "--image", "bazzite-deck", "--oci-dir", "/scratch/chunked-oci",
+         "--version-tag", "45.20261018", "--syft-cmd", "/opt/syft"]
+    )
+    assert b.cmd_sbom(args) == 0
+    assert "/opt/syft --source-name bazzite-deck-45.20261018 oci-dir:/scratch/chunked-oci -o syft-json=" in caplog.text
+    assert "export" not in caplog.text
+    assert json.loads(capsys.readouterr().out)["sbom"].endswith("/sbom.json")
+
+
+def test_sbom_requires_oci_dir():
+    with pytest.raises(SystemExit):
+        b.build_parser().parse_args(["sbom"])
+
+
 def test_test_dry_run_invokes_dgoss(caplog):
     caplog.set_level(logging.INFO, logger="build")
     args = b.build_parser().parse_args(["--dry-run", "test", "--ref", "containers-storage:localhost/chunked-img"])

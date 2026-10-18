@@ -276,9 +276,12 @@ jobs:
             --raw-image raw-img \
             --chunked-image localhost/chunked-img \
             --labels-file "${RUNNER_TEMP}/labels.txt" \
+            --oci-dir "${RUNNER_TEMP}/chunked-oci" \
             > rechunk.json
           ref="$(jq -er .ref rechunk.json)"
+          oci_dir="$(jq -er .oci_dir rechunk.json)"
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "oci_dir=${oci_dir}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Syft
         id: setup-syft
@@ -295,17 +298,24 @@ jobs:
           IMAGE: ${{ matrix.image }}
           VERSION_TAG: ${{ steps.resolve.outputs.source_version_tag }}
           SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+          OCI_DIR: ${{ steps.rechunk.outputs.oci_dir }}
         run: |
           ./build.py sbom \
             --image "${IMAGE}" \
-            --chunked-image localhost/chunked-img \
+            --oci-dir "${OCI_DIR}" \
             --version-tag "${VERSION_TAG}" \
-            --container-mgr podman \
             --syft-cmd "${SYFT_CMD}" \
             > sbom.json
           sbom="$(jq -er .sbom sbom.json)"
           du -sh "${sbom}"
           echo "SBOM=${sbom}" >> "$GITHUB_OUTPUT"
+
+      # The image itself lives in container storage; the OCI layout was
+      # only kept for the SBOM scan.
+      - name: Remove chunked OCI layout
+        env:
+          OCI_DIR: ${{ steps.rechunk.outputs.oci_dir }}
+        run: rm -rf "${OCI_DIR}"
 
       - name: Install dgoss
         run: |
