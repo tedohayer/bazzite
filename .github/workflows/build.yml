@@ -237,6 +237,9 @@ jobs:
             --secret "id=GITHUB_TOKEN,env=GITHUB_TOKEN" \
             --tag raw-img
 
+      - name: "exp: raw-img layer sizes"
+        run: podman history --format '{{.Size}}\t{{.CreatedBy}}' raw-img | grep -v '^0B' | cut -c1-160
+
       - name: Save DNF package cache
         if: steps.cache-prep.outputs.allow_cache_write == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

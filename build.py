@@ -841,7 +841,7 @@ def cmd_push(args: argparse.Namespace) -> int:
         for _ in range(2):
             run(
                 [
-                    "podman", "push", f"--digestfile={digestfile}",
+                    "podman", "--log-level=debug", "push", f"--digestfile={digestfile}",
                     "--compression-format=zstd", "--compression-level=3",
                     rechunk_ref, f"docker://{target}",
                 ],
