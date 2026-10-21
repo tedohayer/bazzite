@@ -1,0 +1,119 @@
+name: Bench changelog
+on:
+  push:
+    branches:
+      - bench/changelog-release
+permissions: {}
+
+env:
+  CURR: unstable-45.20261021.3
+  PREV: unstable-45.20261021.2
+  PREV_RELEASE: bench-changelog-prev
+
+jobs:
+  prep:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - run: python3 .github/bench/changelog_bench.py prep --owner "${GITHUB_REPOSITORY_OWNER,,}" --out out --tags "$CURR" "$PREV"
+      - name: Publish previous package files as release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "$PREV_RELEASE" --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
+          gh release create "$PREV_RELEASE" --prerelease --target "$GITHUB_SHA" -t "$PREV_RELEASE" -n bench \
+            -R "$GITHUB_REPOSITORY" out/pkgs-"$PREV"/packages-*.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: prep
+          path: out/
+
+  make-sim:
+    needs: prep
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [bazzite, bazzite-deck, bazzite-deck-gnome, bazzite-deck-nvidia, bazzite-deck-nvidia-gnome, bazzite-gnome, bazzite-gnome-nvidia, bazzite-gnome-nvidia-open, bazzite-nvidia, bazzite-nvidia-open]
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prep
+          path: prep
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: packages-${{ matrix.image }}
+          path: prep/pkgs-${{ env.CURR }}/packages-${{ matrix.image }}.json
+
+  fetch:
+    needs: prep
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [raw, zst3, zst19]
+        run: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - run: |
+          python3 .github/bench/changelog_bench.py fetch --owner "${GITHUB_REPOSITORY_OWNER,,}" \
+            --variant "${{ matrix.variant }}" --tags "$CURR" "$PREV" --result result.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: result-${{ matrix.variant }}-${{ matrix.run }}
+          path: result.json
+
+  pkgfile:
+    needs: make-sim
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        run: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: echo "T0=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: curr
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$PREV_RELEASE" -R "$GITHUB_REPOSITORY" -p 'packages-*.json' -D prev
+          echo "DOWNLOAD_S=$(awk "BEGIN{print $(date +%s.%N) - $T0}")" >> "$GITHUB_ENV"
+      - run: python3 .github/bench/changelog_bench.py pkgfile --dirs curr prev --download-s "$DOWNLOAD_S" --result result.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: result-pkgfile-${{ matrix.run }}
+          path: result.json
+
+  baseline:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        run: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 500
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+      - run: |
+          t0=$(date +%s.%N)
+          python3 .github/workflows/changelog.py unstable ./o.env ./c.md --workdir . > /dev/null
+          jq -n --argjson s "$(awk "BEGIN{print $(date +%s.%N) - $t0}")" '{variant: "baseline", total_s: $s}' > result.json
+          cat result.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: result-baseline-${{ matrix.run }}
+          path: result.json
