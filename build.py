@@ -15,11 +15,13 @@ CI usage:
     ./build.py matrix              # GitHub Actions matrix JSON (via fromJson)
     ./build.py version             # the one release tag shared by every image
     ./build.py resolve --image X   # build args + labels + tags, as JSON
-    ./build.py build --image X --rechunk --sbom --sign --push
+    ./build.py build --image X --resolved-json resolved.json --tag raw-img
+    ./build.py rechunk / sbom / packages / test / push / sign / sbom-attach
+        # one subcommand per CI step; see .github/workflows/build.yml
 
-Every subcommand accepts -v/--verbose and -q/--quiet. Diagnostic output goes
-to stderr; JSON/data output goes to stdout, so `./build.py matrix | jq` and
-`VALUE=$(./build.py resolve --image X | jq -r .version_tag)` both work
+-v/--verbose, -q/--quiet, and --dry-run go before the subcommand
+(`./build.py -v resolve ...`). Diagnostic output goes to stderr; JSON/data output goes to stdout, so `./build.py matrix | jq` and
+`VALUE=$(./build.py resolve --image X | jq -r .version)` both work
 cleanly even with logging turned up.
 """
 

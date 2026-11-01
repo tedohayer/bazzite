@@ -57,10 +57,9 @@ jobs:
     uses: ./.github/workflows/just-syntax-check.yml
 
   # Matrix has to be known before push-ghcr's jobs are scheduled, so this
-  # computes it in a separate job and feeds it in via fromJson. The matrix
-  # itself now lives in build.py's IMAGES table (the single source of truth
-  # also used by build_iso.yml, clean.yml, and changelog.py) instead of
-  # being hardcoded here.
+  # computes it in a separate job and feeds it in via fromJson. The image
+  # list comes from build.py's IMAGES table (also used by build_iso.yml,
+  # clean.yml, and changelog.py).
   #
   # The version tag is resolved here too, once for the whole run, so every
   # image lands on the same tag even if only some of them already have it.
@@ -125,14 +124,8 @@ jobs:
         id: repo_owner_case
         run: echo "lowercase=${REPO_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      # Replaces the old "Define base variables" / "Pull Images and find
-      # versions" / "Prepare build args file" steps. build.py's IMAGES table
-      # and resolve() are the single source of truth for the per-image
-      # target/nvidia_base/nvidia_flavor derivation (see build.py's IMAGES
-      # comment for why that used to be substring-matched bash), and for the
-      # version/tag/label logic covered by build.py's golden tests. This
-      # also fixes SHA_HEAD_SHORT always being empty in the old build args
-      # file -- that field genuinely comes from github.sha now.
+      # build.py's IMAGES table and resolve() give the per-image build args,
+      # labels, and tags (covered by test_builder.py's golden tests).
       #
       # The release version (with its .1/.2 point-release suffix) comes from
       # compute-matrix, so it's the same for every image in the run.
@@ -177,12 +170,8 @@ jobs:
           gh run download --repo=$docs_repo -n github-pages
           tar -xC "$DOCS_DIR" -f artifact.tar
 
-      # Fail fast with a clear error and warm the local pull cache before
-      # DNF Package Cache Prep / Build Image, same as the old "Pull Images
-      # and find versions" step's podman pull calls. skopeo inspect (inside
-      # build.py resolve) doesn't require a local pull, so this is the only
-      # remaining reason to do it explicitly -- buildah build would pull
-      # these on demand anyway.
+      # Fail fast with a clear error if a base or akmods image is missing.
+      # buildah build would pull these on demand anyway.
       - name: Prefetch images
         run: |
           set -eo pipefail
@@ -191,35 +180,6 @@ jobs:
           if [ "${{ steps.resolve.outputs.install_nvidia }}" == "true" ]; then
             podman pull "ghcr.io/ublue-os/akmods-${{ steps.resolve.outputs.nvidia_flavor }}:${{ steps.resolve.outputs.akmods_tag }}"
           fi
-
-      - name: DNF Package Cache Prep
-        id: cache-prep
-        env:
-          IMAGE: ${{ matrix.image }}
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          FEDORA_VERSION: ${{ matrix.fedora_version }}
-        run: |
-          set -eoux pipefail
-
-          # Rootless buildah caches to /var/tmp/buildah-cache-$UID rather than
-          # -0, so the old rootful caches are dead weight. Bump to invalidate.
-          CACHE_NAME="bazzite-${FEDORA_VERSION}-rootless"
-
-          ALLOW_CACHE_WRITE="false"
-
-          # TODO: If we ever integrate dx images here then this may need to be adjusted
-          # TODO: remove testing here when we have cache on main branch
-          # PR caches are useless and may wipe cache on main
-          if [[ "${IMAGE}" =~ "-deck" ]] && \
-             [[ ! "${IMAGE}" =~ "gnome" ]] && \
-             [[ "${EVENT_NAME}" != "pull_request" ]] && \
-             [[ "${REF_NAME}" == "main" || "${REF_NAME}" == "testing" ]]; then
-            ALLOW_CACHE_WRITE="true"
-          fi
-
-          echo "cache_name=${CACHE_NAME}" >> "$GITHUB_OUTPUT"
-          echo "allow_cache_write=${ALLOW_CACHE_WRITE}" >> "$GITHUB_OUTPUT"
 
       # Build image using buildah and save it to raw-img
       - name: Build Image
@@ -233,16 +193,6 @@ jobs:
             --resolved-json resolved.json \
             --secret "id=GITHUB_TOKEN,env=GITHUB_TOKEN" \
             --tag raw-img
-
-      - name: Save DNF package cache
-        if: steps.cache-prep.outputs.allow_cache_write == 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        env:
-          CACHE_NAME: ${{ steps.cache-prep.outputs.cache_name }}
-          ALLOW_CACHE_WRITE: ${{ steps.cache-prep.outputs.allow_cache_write }}
-        with:
-          path: /var/tmp/buildah-cache-*
-          key: ${{ runner.os }}-${{ runner.arch }}-buildah-${{ env.CACHE_NAME }}
 
       # The final image label set. Everything except ostree.linux is already
       # known (build.py resolve computed the deduped version + static OCI
