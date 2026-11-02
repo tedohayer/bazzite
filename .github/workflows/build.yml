@@ -145,8 +145,6 @@ jobs:
 
           {
             echo "output_image=$(jq -r .output_image resolved.json)"
-            echo "container_target=$(jq -r .container_target resolved.json)"
-            echo "nvidia_base=$(jq -r .nvidia_base resolved.json)"
             echo "nvidia_flavor=$(jq -r .nvidia_flavor resolved.json)"
             echo "install_nvidia=$(jq -r .install_nvidia resolved.json)"
             echo "akmods_tag=$(jq -r .akmods_tag resolved.json)"

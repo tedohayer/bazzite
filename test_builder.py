@@ -26,53 +26,53 @@ LTS_KERNEL = b.LTS_KERNEL_VERSION
 # can't just echo a bug back.
 EXPECTED_VARIANTS = {
     "bazzite": {
-        "base_image_name": "kinoite", "container_target": "bazzite",
-        "nvidia_base": "bazzite", "nvidia_flavor": "nvidia-open", "install_nvidia": False,
+        "base_image_name": "kinoite",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": False,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-gnome": {
-        "base_image_name": "silverblue", "container_target": "bazzite",
-        "nvidia_base": "bazzite", "nvidia_flavor": "nvidia-open", "install_nvidia": False,
+        "base_image_name": "silverblue",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": False,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-deck": {
-        "base_image_name": "kinoite", "container_target": "bazzite-deck",
-        "nvidia_base": "bazzite-deck", "nvidia_flavor": "nvidia-open", "install_nvidia": False,
+        "base_image_name": "kinoite",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": False,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-deck-gnome": {
-        "base_image_name": "silverblue", "container_target": "bazzite-deck",
-        "nvidia_base": "bazzite-deck", "nvidia_flavor": "nvidia-open", "install_nvidia": False,
+        "base_image_name": "silverblue",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": False,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-deck-nvidia": {
-        "base_image_name": "kinoite", "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite-deck", "nvidia_flavor": "nvidia-open", "install_nvidia": True,
+        "base_image_name": "kinoite",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": True,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-deck-nvidia-gnome": {
-        "base_image_name": "silverblue", "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite-deck", "nvidia_flavor": "nvidia-open", "install_nvidia": True,
+        "base_image_name": "silverblue",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": True,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-nvidia": {
-        "base_image_name": "kinoite", "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite", "nvidia_flavor": "nvidia-lts", "install_nvidia": True,
+        "base_image_name": "kinoite",
+        "nvidia_flavor": "nvidia-lts", "install_nvidia": True,
         "kernel_flavor": "ogc-lts", "kernel_version": LTS_KERNEL,
     },
     "bazzite-gnome-nvidia": {
-        "base_image_name": "silverblue", "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite", "nvidia_flavor": "nvidia-lts", "install_nvidia": True,
+        "base_image_name": "silverblue",
+        "nvidia_flavor": "nvidia-lts", "install_nvidia": True,
         "kernel_flavor": "ogc-lts", "kernel_version": LTS_KERNEL,
     },
     "bazzite-nvidia-open": {
-        "base_image_name": "kinoite", "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite", "nvidia_flavor": "nvidia-open", "install_nvidia": True,
+        "base_image_name": "kinoite",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": True,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
     "bazzite-gnome-nvidia-open": {
-        "base_image_name": "silverblue", "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite", "nvidia_flavor": "nvidia-open", "install_nvidia": True,
+        "base_image_name": "silverblue",
+        "nvidia_flavor": "nvidia-open", "install_nvidia": True,
         "kernel_flavor": "ogc", "kernel_version": KERNEL,
     },
 }
@@ -87,8 +87,6 @@ def test_variant_matches_ci_derivation(image):
     variant = b.get_variant(image)
     expected = EXPECTED_VARIANTS[image]
     assert variant.base_image_name == expected["base_image_name"]
-    assert variant.container_target == expected["container_target"]
-    assert variant.nvidia_base == expected["nvidia_base"]
     assert variant.nvidia_flavor == expected["nvidia_flavor"]
     assert variant.install_nvidia == expected["install_nvidia"]
     assert variant.kernel_flavor == expected["kernel_flavor"]
@@ -202,7 +200,7 @@ def test_build_args_field_set_matches_ci():
     assert set(args) == {
         "BASE_IMAGE_NAME", "FEDORA_VERSION", "BASE_IMAGE", "IMAGE_NAME",
         "IMAGE_VENDOR", "IMAGE_BRANCH", "KERNEL_FLAVOR", "KERNEL_VERSION",
-        "NVIDIA_FLAVOR", "NVIDIA_BASE", "SHA_HEAD_SHORT", "VERSION_TAG",
+        "NVIDIA_FLAVOR", "SHA_HEAD_SHORT", "VERSION_TAG",
         "VERSION_PRETTY", "ARCH", "BUILD_DECK", "BUILD_NVIDIA",
     }
     assert args["SHA_HEAD_SHORT"] == "abc1234"  # never empty
@@ -378,7 +376,6 @@ def test_build_local_mode_uses_dev_version(caplog):
 def test_build_ci_mode_reads_resolved_json(tmp_path, caplog):
     caplog.set_level(logging.INFO, logger="build")
     resolved = {
-        "container_target": "bazzite-nvidia",
         "build_args": {"IMAGE_NAME": "bazzite-nvidia", "VERSION_TAG": "44"},
     }
     resolved_path = tmp_path / "resolved.json"
