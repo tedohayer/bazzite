@@ -78,7 +78,7 @@ Common variant available as `bazzite`, suitable for desktop computers.
 > **ISOs can be downloaded from our [website](https://download.bazzite.gg), and a helpful install guide can be found [here](https://docs.bazzite.gg/General/Installation_Guide/).**
 
 Rebase from an existing upstream Fedora Atomic to this image if you want **Open Source GPU Drivers**:
-(Please note: Mesa's Open Source option for NVIDIA GPUs, NVK is still prone to errors at the time of writing, for any issues relating to NVK [please submit a report with Mesa]([url](https://docs.mesa3d.org/bugs.html)), not Ublue/Bazzite)
+(Please note: Mesa's Open Source option for NVIDIA GPUs, NVK is still prone to errors at the time of writing, for any issues relating to NVK [please submit a report with Mesa](https://docs.mesa3d.org/bugs.html), not Ublue/Bazzite)
 
 ```bash
 rpm-ostree rebase ostree-unverified-registry:ghcr.io/ublue-os/bazzite:stable
@@ -108,9 +108,9 @@ Variant designed for usage as an alternative to SteamOS on the Steam Deck, and f
 - Built in support for Windows dual-boot thanks to Fedora's installation of GRUB being left intact.
 - Update break something? Easily roll back to the previous version of Bazzite thanks to `rpm-ostree`'s rollback functionality. You can even select previous images at boot.
 - Steam and Lutris preinstalled on the image as layered packages.
-- Uses ZRAM<sub><sup>(4GB)</sup></sub> with the LZ4 compression algorithm by default.
-- [LAVD](https://crates.io/crates/scx_lavd) and [BORE](https://github.com/firelzrd/bore-scheduler) CPU Schedulers for smooth and responsive gameplay.
-- Kyber I/O scheduler to prevent I/O starvation when installing games or during background `duperemove` process.
+- Uses ZRAM<sub><sup>(half of RAM, up to 16GB)</sup></sub> with the zstd compression algorithm by default.
+- [LAVD](https://crates.io/crates/scx_lavd) CPU scheduler for smooth and responsive gameplay.
+- Kyber I/O scheduler to prevent I/O starvation when installing games or during background `bees` deduplication.
 - Applies SteamOS's kernel parameters.
 - Color calibrated display profiles for matte and reflective Steam Deck screens included.
 - Default-disabled power-user features, including:
@@ -218,8 +218,10 @@ View [additional documentation](http://docs.bazzite.gg/) surrounding the project
 These images are signed with sigstore's [cosign](https://docs.sigstore.dev/cosign/key_management/overview/). You can verify the signature by downloading the `cosign.pub` key from this repo and running the following command:
 
 ```bash
-cosign verify --key cosign.pub ghcr.io/ublue-os/bazzite
+cosign verify --key cosign.pub --new-bundle-format=false ghcr.io/ublue-os/bazzite
 ```
+
+`--new-bundle-format=false` needs cosign 2.5 or newer. Without it, cosign 3 checks the build provenance attestation instead of the signature and fails with "expected key signature, not certificate".
 
 ## Secure Boot
 
@@ -270,14 +272,14 @@ Bazzite is a community effort and wouldn't exist without everyone's support. Bel
 
 Bazzite is built entirely via GitHub Actions. Creating your own custom version of it is as easy as forking this repository, adding a private signing key, and enabling the fork's GitHub Actions. Running the `Build Bazzite` workflow will then generate custom images for all variants of Bazzite.
 
-If you only want to generate images for the variants of Bazzite you are using, edit `.github/workflows/build.yml` to comment out the variants you do not wish to build in the `push-ghcr` job's `strategy`'s `matrix` list.
+If you only want to generate images for the variants of Bazzite you are using, remove the variants you do not wish to build from the `IMAGES` table in `build.py`. The build, ISO, and cleanup workflows all read their image list from it.
 
 We also ship a config for the popular [pull app](https://github.com/apps/pull) if you'd like to keep your fork in sync with upstream. Enable this app on your repo to keep track of Bazzite changes while also making your own modifications.
 
 ### How to Sign Your Images
 
 1. First, [familiarize yourself](https://docs.github.com/en/actions/security-guides/encrypted-secrets) with keeping secrets on GitHub.
-2. [Generate a new key pair](https://docs.sigstore.dev/cosign/key_management/signing_with_self-managed_keys/) with Cosign (`cosign generate-key-pair`). This key pair must have no signature.
+2. [Generate a new key pair](https://docs.sigstore.dev/cosign/key_management/signing_with_self-managed_keys/) with Cosign (`cosign generate-key-pair`). This key pair must have no password.
 3. Replace the `cosign.pub` file in your public repo with the one you generated - you and your users will need it to check the signatures.
 4. Add the private key (stored as text inside the `cosign.key` file) as a Repository Secret in the fork's settings page, in the `Settings -> Secrets and variables -> Actions` menu. Name the secret `SIGNING_SECRET`.
 

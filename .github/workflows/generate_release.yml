@@ -45,7 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ./.github/workflows/changelog.py \
+          python3 -u ./.github/workflows/changelog.py \
             "${{ steps.get-target.outputs.target }}" \
             ./output.env ./changelog.md --workdir . --handwritten "${{ github.event.inputs.handwritten }}" \
             --packages-dir packages-in --packages-out packages.json \

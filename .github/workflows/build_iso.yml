@@ -21,9 +21,7 @@ concurrency:
 jobs:
   # Matrix has to be known before build-iso's jobs are scheduled, so this
   # computes it in a separate job -- same pattern as build.yml's
-  # compute-matrix. The image list itself now comes from build.py's IMAGES
-  # table (the single source of truth also used by build.yml, clean.yml,
-  # and changelog.py) instead of being duplicated here.
+  # compute-matrix. The image list comes from build.py's IMAGES table.
   compute-matrix:
     name: Compute build matrix
     runs-on: ubuntu-latest

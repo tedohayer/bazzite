@@ -15,11 +15,13 @@ CI usage:
     ./build.py matrix              # GitHub Actions matrix JSON (via fromJson)
     ./build.py version             # the one release tag shared by every image
     ./build.py resolve --image X   # build args + labels + tags, as JSON
-    ./build.py build --image X --rechunk --sbom --sign --push
+    ./build.py build --image X --resolved-json resolved.json --tag raw-img
+    ./build.py rechunk / sbom / packages / test / push / sign / sbom-attach
+        # one subcommand per CI step; see .github/workflows/build.yml
 
-Every subcommand accepts -v/--verbose and -q/--quiet. Diagnostic output goes
-to stderr; JSON/data output goes to stdout, so `./build.py matrix | jq` and
-`VALUE=$(./build.py resolve --image X | jq -r .version_tag)` both work
+-v/--verbose, -q/--quiet, and --dry-run go before the subcommand
+(`./build.py -v resolve ...`). Diagnostic output goes to stderr; JSON/data output goes to stdout, so `./build.py matrix | jq` and
+`VALUE=$(./build.py resolve --image X | jq -r .version)` both work
 cleanly even with logging turned up.
 """
 
@@ -68,50 +70,36 @@ LTS_KERNEL_VERSION = "6.18.56-ogc1.1.fc45"
 IMAGES: dict[str, dict] = {
     "bazzite": {
         "base_image_name": "kinoite",
-        "container_target": "bazzite",
-        "nvidia_base": "bazzite",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": False,
     },
     "bazzite-gnome": {
         "base_image_name": "silverblue",
-        "container_target": "bazzite",
-        "nvidia_base": "bazzite",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": False,
     },
     "bazzite-deck": {
         "base_image_name": "kinoite",
-        "container_target": "bazzite-deck",
-        "nvidia_base": "bazzite-deck",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": False,
     },
     "bazzite-deck-gnome": {
         "base_image_name": "silverblue",
-        "container_target": "bazzite-deck",
-        "nvidia_base": "bazzite-deck",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": False,
     },
     "bazzite-deck-nvidia": {
         "base_image_name": "kinoite",
-        "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite-deck",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": True,
     },
     "bazzite-deck-nvidia-gnome": {
         "base_image_name": "silverblue",
-        "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite-deck",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": True,
     },
     "bazzite-nvidia": {
         "base_image_name": "kinoite",
-        "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite",
         "nvidia_flavor": "nvidia-lts",
         "install_nvidia": True,
         "kernel_flavor": "ogc-lts",
@@ -119,8 +107,6 @@ IMAGES: dict[str, dict] = {
     },
     "bazzite-gnome-nvidia": {
         "base_image_name": "silverblue",
-        "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite",
         "nvidia_flavor": "nvidia-lts",
         "install_nvidia": True,
         "kernel_flavor": "ogc-lts",
@@ -128,15 +114,11 @@ IMAGES: dict[str, dict] = {
     },
     "bazzite-nvidia-open": {
         "base_image_name": "kinoite",
-        "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": True,
     },
     "bazzite-gnome-nvidia-open": {
         "base_image_name": "silverblue",
-        "container_target": "bazzite-nvidia",
-        "nvidia_base": "bazzite",
         "nvidia_flavor": "nvidia-open",
         "install_nvidia": True,
     },
@@ -336,8 +318,6 @@ class Variant:
     image: str
     base_image_name: str
     base_image_flavor: str
-    container_target: str
-    nvidia_base: str
     nvidia_flavor: str
     install_nvidia: bool
     fedora_version: int
@@ -388,7 +368,6 @@ def build_args(
         "KERNEL_FLAVOR": variant.kernel_flavor,
         "KERNEL_VERSION": variant.kernel_version,
         "NVIDIA_FLAVOR": variant.nvidia_flavor,
-        "NVIDIA_BASE": variant.nvidia_base,
         "SHA_HEAD_SHORT": sha_head_short,
         "VERSION_TAG": version_tag,
         "VERSION_PRETTY": version_pretty,
@@ -624,8 +603,6 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     out = {
         "image": variant.image,
         "base_image": variant.base_image,
-        "container_target": variant.container_target,
-        "nvidia_base": variant.nvidia_base,
         "nvidia_flavor": variant.nvidia_flavor,
         "install_nvidia": variant.install_nvidia,
         "akmods_tag": variant.akmods_tag,
@@ -646,16 +623,14 @@ def cmd_build(args: argparse.Namespace) -> int:
     Local dev builds skip the registry entirely -- no release tag lookup,
     no version dedup -- since a contributor iterating on a package list
     doesn't care whether "44.20260820" collides with a published tag. CI
-    passes --resolved-json to reuse the build args/target that `resolve`
+    passes --resolved-json to reuse the build args that `resolve`
     already computed once, rather than resolving twice.
     """
     if args.resolved_json:
         data = json.loads(Path(args.resolved_json).read_text())
-        target = data["container_target"]
         args_dict = data["build_args"]
     else:
         variant = get_variant(args.image)
-        target = variant.container_target
         args_dict = build_args(
             variant,
             image_branch="local",
@@ -1030,7 +1005,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_build = sub.add_parser("build", help="build one image locally")
     p_build.add_argument("--image", default=DEFAULT_IMAGE, choices=sorted(IMAGES))
     p_build.add_argument("--container-mgr", default=None)
-    p_build.add_argument("--resolved-json", default=None, help="reuse build args/target from `resolve`'s output (CI)")
+    p_build.add_argument("--resolved-json", default=None, help="reuse build args from `resolve`'s output (CI)")
     p_build.add_argument("--tag", default=None)
     p_build.add_argument("--secret", default=None, help="passed through to --secret (e.g. id=GITHUB_TOKEN,env=GITHUB_TOKEN)")
     p_build.set_defaults(func=cmd_build)
