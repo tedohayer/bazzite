@@ -9,6 +9,7 @@ comment for why the table is hand-written rather than derived.
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -106,16 +107,16 @@ def test_unknown_image_raises_with_valid_list():
         b.get_variant("bazzite-does-not-exist")
 
 
-# --- resolve_source_version ---
+# --- resolve_pretty_version ---
 
-def test_source_version_stable():
+def test_pretty_version_stable():
     pretty = b.resolve_pretty_version(
         ref_name="main", version="45.20261013", sha_short="abc1234", fedora_version=45,
     )
     assert pretty == "Stable (F45.20261013)"
 
 
-def test_source_version_unstable():
+def test_pretty_version_unstable():
     pretty = b.resolve_pretty_version(
         ref_name="unstable", version="unstable-45.20261013.2",
         sha_short="abc1234", fedora_version=45,
@@ -123,7 +124,7 @@ def test_source_version_unstable():
     assert pretty == "Unstable (F45.20261013.2, #abc1234)"
 
 
-def test_source_version_testing():
+def test_pretty_version_testing():
     pretty = b.resolve_pretty_version(
         ref_name="testing", version="testing-45.20261014",
         sha_short="c500b43", fedora_version=45,
@@ -131,7 +132,7 @@ def test_source_version_testing():
     assert pretty == "Testing (F45.20261014, #c500b43)"
 
 
-def test_source_version_pr_number_takes_priority_over_ref():
+def test_pretty_version_pr_number_takes_priority_over_ref():
     # pr_number takes priority regardless of ref_name
     pretty = b.resolve_pretty_version(
         ref_name="unstable", version="unstable-45.20261013", sha_short="abc1234",
@@ -189,83 +190,43 @@ def test_alias_tags_testing():
 
 # --- build_args ---
 
-def test_build_args_field_set_matches_ci():
+def test_build_args_match_containerfile_args():
+    """Every build arg build.py passes is declared in the Containerfile, and
+    every ARG the Containerfile declares is passed."""
     variant = b.get_variant("bazzite-deck-nvidia")
     args = b.build_args(
         variant, image_vendor="ublue-os", image_branch="main",
         sha_head_short="abc1234", version_tag="44", version_pretty="Stable (F44)",
     )
-    # The exact set of build-args passed to podman/buildah -- deliberately
-    # excludes SOURCE_IMAGE, which isn't a real ARG in the Containerfile.
-    assert set(args) == {
-        "BASE_IMAGE_NAME", "FEDORA_VERSION", "BASE_IMAGE", "IMAGE_NAME",
-        "IMAGE_VENDOR", "IMAGE_BRANCH", "KERNEL_FLAVOR", "KERNEL_VERSION",
-        "NVIDIA_FLAVOR", "SHA_HEAD_SHORT", "VERSION_TAG",
-        "VERSION_PRETTY", "ARCH", "BUILD_DECK", "BUILD_NVIDIA",
-    }
+    containerfile = (b.REPO_ROOT / "Containerfile").read_text()
+    declared = set(re.findall(r"^ARG ([A-Z_]+)", containerfile, flags=re.MULTILINE))
+    assert set(args) == declared
     assert args["SHA_HEAD_SHORT"] == "abc1234"  # never empty
 
-def test_build_args_build_no_deck_no_nvidia():
-    variants = [
-        "bazzite",
-        "bazzite-gnome",
-    ]
 
-    for variant_name in variants:
-        variant = b.get_variant(variant_name)
-        build_args = b.build_args(
-            variant, image_vendor="ublue-os", image_branch="main",
-            sha_head_short="abc1234", version_tag="44", version_pretty="Stable (F44)",
-        )
-        assert build_args["BUILD_DECK"] == "FALSE"
-        assert build_args["BUILD_NVIDIA"] == "FALSE"
+@pytest.mark.parametrize(
+    ("image", "deck", "nvidia"),
+    [
+        ("bazzite", "FALSE", "FALSE"),
+        ("bazzite-gnome", "FALSE", "FALSE"),
+        ("bazzite-deck", "TRUE", "FALSE"),
+        ("bazzite-deck-gnome", "TRUE", "FALSE"),
+        ("bazzite-nvidia", "FALSE", "TRUE"),
+        ("bazzite-gnome-nvidia", "FALSE", "TRUE"),
+        ("bazzite-nvidia-open", "FALSE", "TRUE"),
+        ("bazzite-gnome-nvidia-open", "FALSE", "TRUE"),
+        ("bazzite-deck-nvidia", "TRUE", "TRUE"),
+        ("bazzite-deck-nvidia-gnome", "TRUE", "TRUE"),
+    ],
+)
+def test_build_args_deck_and_nvidia_flags(image, deck, nvidia):
+    args = b.build_args(
+        b.get_variant(image), image_vendor="ublue-os", image_branch="main",
+        sha_head_short="abc1234", version_tag="44", version_pretty="Stable (F44)",
+    )
+    assert args["BUILD_DECK"] == deck
+    assert args["BUILD_NVIDIA"] == nvidia
 
-def test_build_args_build_deck_no_nvidia():
-    variants = [
-        "bazzite-deck",
-        "bazzite-deck-gnome",
-    ]
-
-    for variant_name in variants:
-        variant = b.get_variant(variant_name)
-        build_args = b.build_args(
-            variant, image_vendor="ublue-os", image_branch="main",
-            sha_head_short="abc1234", version_tag="44", version_pretty="Stable (F44)",
-        )
-        assert build_args["BUILD_DECK"] == "TRUE"
-        assert build_args["BUILD_NVIDIA"] == "FALSE"
-
-def test_build_args_build_nvidia_no_deck():
-    variants = [
-        "bazzite-nvidia",
-        "bazzite-gnome-nvidia",
-        "bazzite-nvidia-open",
-        "bazzite-gnome-nvidia-open",
-    ]
-
-    for variant_name in variants:
-        variant = b.get_variant(variant_name)
-        build_args = b.build_args(
-            variant, image_vendor="ublue-os", image_branch="main",
-            sha_head_short="abc1234", version_tag="44", version_pretty="Stable (F44)",
-        )
-        assert build_args["BUILD_DECK"] == "FALSE"
-        assert build_args["BUILD_NVIDIA"] == "TRUE"
-
-def test_build_args_build_nvidia_deck():
-    variants = [
-        "bazzite-deck-nvidia",
-        "bazzite-deck-nvidia-gnome",
-    ]
-
-    for variant_name in variants:
-        variant = b.get_variant(variant_name)
-        build_args = b.build_args(
-            variant, image_vendor="ublue-os", image_branch="main",
-            sha_head_short="abc1234", version_tag="44", version_pretty="Stable (F44)",
-        )
-        assert build_args["BUILD_DECK"] == "TRUE"
-        assert build_args["BUILD_NVIDIA"] == "TRUE"
 
 def test_labels_include_required_oci_fields():
     variant = b.get_variant("bazzite")
@@ -343,13 +304,13 @@ def test_resolve_uses_precomputed_version(capsys):
 
 def test_resolve_testing_uses_our_version_without_inspecting_base(capsys):
     args = b.build_parser().parse_args([
-        "resolve", "--ref-name", "testing", "--version", "testing-45.20261014",
+        "resolve", "--ref-name", "testing", "--version", f"testing-{FEDORA}.20261014",
         "--sha", "c500b43",
     ])
     assert b.cmd_resolve(args) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["build_args"]["VERSION_TAG"] == "testing-45.20261014"
-    assert out["build_args"]["VERSION_PRETTY"] == "Testing (F45.20261014, #c500b43)"
+    assert out["build_args"]["VERSION_TAG"] == f"testing-{FEDORA}.20261014"
+    assert out["build_args"]["VERSION_PRETTY"] == f"Testing (F{FEDORA}.20261014, #c500b43)"
 
 
 def test_resolve_rejects_version_for_another_fedora_release():
