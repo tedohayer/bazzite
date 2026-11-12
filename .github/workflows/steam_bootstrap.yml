@@ -68,6 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "${GITHUB_TOKEN}" | podman login ghcr.io -u "${ACTOR}" --password-stdin
+          echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${ACTOR}" --password-stdin
           podman push --digestfile "${RUNNER_TEMP}/digest" "${IMAGE}:${VERSION}"
           podman push "${IMAGE}:latest"
           echo "digest=$(cat "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
