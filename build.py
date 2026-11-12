@@ -395,6 +395,7 @@ def build_args(
         "KERNEL_VERSION": variant.kernel_version,
         "NVIDIA_FLAVOR": variant.nvidia_flavor,
         "NVIDIA_BASE": variant.nvidia_base,
+        "STEAM_BOOTSTRAP_IMAGE": f"ghcr.io/{image_vendor}/steam-bootstrap:latest",
         "SHA_HEAD_SHORT": sha_head_short,
         "VERSION_TAG": version_tag,
         "VERSION_PRETTY": version_pretty,

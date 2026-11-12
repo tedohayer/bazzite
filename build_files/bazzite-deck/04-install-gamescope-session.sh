@@ -2,7 +2,7 @@
 #
 # Install Gamescope Session supporting files for Bazzite.
 #
-# Builds the Steam bootstrap archive used by gamescope-session-plus
+# Installs the Steam bootstrap archive used by gamescope-session-plus
 # and sets component metadata attributes for tracking.
 #
 set -xeuo pipefail
@@ -15,13 +15,11 @@ trap 'echo "::endgroup::"' EXIT
 echo "==> Creating gamescope-session-plus directory..."
 mkdir -p /usr/share/gamescope-session-plus/
 
-# -- Build Steam bootstrap archive --
-# Assemble the Steam client pinned by the vendored Valve manifest.
+# -- Install Steam bootstrap archive --
+# Copy the archive published by the steam_bootstrap workflow.
 STEAM_BOOTSTRAP=/usr/share/gamescope-session-plus/bootstrap_steam.tar.zst
-echo "==> Building Steam bootstrap archive..."
-/ctx/tools/steam-bootstrap \
-    /ctx/bazzite-deck/steam_client_steamrt64.manifest \
-    "${STEAM_BOOTSTRAP}"
+echo "==> Installing Steam bootstrap archive..."
+cp /tmp/steam-bootstrap/bootstrap_steam.tar.zst "${STEAM_BOOTSTRAP}"
 
 # -- Set component metadata attributes --
 # Tag the bootstrap archive with component and update-interval for tracking.

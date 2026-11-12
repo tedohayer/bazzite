@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Build an offline Steam client bootstrap archive from a pinned Valve
-# client manifest.
+# Build an offline Steam client bootstrap archive from a Valve client
+# manifest.
 #
 # Usage: steam-bootstrap <manifest> <output.tar.zst>
 #
