@@ -225,7 +225,7 @@ def test_build_args_match_containerfile_args():
         "KERNEL_FLAVOR", "NVIDIA_FLAVOR", "SHA_HEAD_SHORT", "VERSION_TAG", "VERSION_PRETTY",
         "BUILD_DECK", "BUILD_NVIDIA",
     }
-    from_only_args = {"BASE_IMAGE", "KERNEL_VERSION", "NVIDIA_BASE", "STEAM_BOOTSTRAP_IMAGE", "ARCH"}
+    from_only_args = {"BASE_IMAGE", "KERNEL_VERSION", "NVIDIA_BASE", "ARCH"}
     assert set(args) == stage_args | from_only_args
 
     def declared(text):

@@ -6,19 +6,23 @@ first time Steam starts (by gamescope-session-plus in Game Mode, or by
 `bazzite-steam` in Desktop Mode). Because it already contains a verified
 client, Steam reaches the login screen without a network connection.
 
-The archive is published as `ghcr.io/ublue-os/steam-bootstrap:latest`, a
-scratch image that holds only `bootstrap_steam.tar.zst`. Image builds mount it
-from there (`STEAM_BOOTSTRAP_IMAGE` in the `Containerfile`, set by `build.py`
-from the image vendor) and copy it in.
+`.github/workflows/steam_bootstrap.yml` builds the archive and uploads it as
+the `steam-bootstrap` Actions artifact. Deck jobs in `build.yml` download the
+artifact from the newest successful run into `steam_bootstrap/`, which the
+`Containerfile` mounts for the deck build script.
 
 ## Updating
 
-`.github/workflows/steam_bootstrap.yml` runs on the 1st of every month, when
-`build_files/tools/steam-bootstrap` changes, and on demand from the Actions tab.
-It downloads the manifest Valve currently serves to Steam Deck stable clients,
-builds the archive with `build_files/tools/steam-bootstrap`, and pushes it as
-`latest` and as the client version (the client's build time as a Unix
-timestamp). The next image build picks it up.
+The workflow runs on the 1st of every month, when
+`build_files/tools/steam-bootstrap` changes, and on demand from the Actions
+tab. It downloads the manifest Valve currently serves to Steam Deck stable
+clients and builds the archive with `build_files/tools/steam-bootstrap`. The
+next image build picks it up.
+
+Artifacts expire after 90 days, so the monthly run also keeps one available.
+If none is (the workflow kept failing, or a local build without one), the deck
+build script makes the archive itself from Valve's current manifest. That
+takes a minute or two longer and needs Valve's CDN to be reachable.
 
 The archive is reproducible, so a run that finds the same client version
 produces the same file (as long as the runner's zstd is unchanged) and deck
@@ -30,11 +34,11 @@ should reach the login screen, and `~/.local/share/Steam/logs/bootstrap_log.txt`
 should end with `Verification complete` and contain no `Downloading manifest`
 line.
 
-To build the archive locally:
+To build the archive locally, or to reuse one across local image builds:
 
 ```sh
 curl -o manifest https://client-update.steamstatic.com/steam_client_steamdeck_stable_steamrt64
-./build_files/tools/steam-bootstrap manifest bootstrap_steam.tar.zst
+./build_files/tools/steam-bootstrap manifest steam_bootstrap/bootstrap_steam.tar.zst
 ```
 
 ## Where the pieces come from

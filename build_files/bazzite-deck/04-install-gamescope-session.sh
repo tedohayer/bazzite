@@ -16,10 +16,19 @@ echo "==> Creating gamescope-session-plus directory..."
 mkdir -p /usr/share/gamescope-session-plus/
 
 # -- Install Steam bootstrap archive --
-# Copy the archive published by the steam_bootstrap workflow.
+# Use the archive published by the steam_bootstrap workflow, or build one
+# from Valve's current manifest when it wasn't downloaded.
 STEAM_BOOTSTRAP=/usr/share/gamescope-session-plus/bootstrap_steam.tar.zst
-echo "==> Installing Steam bootstrap archive..."
-cp /tmp/steam-bootstrap/bootstrap_steam.tar.zst "${STEAM_BOOTSTRAP}"
+if [[ -f /tmp/steam-bootstrap/bootstrap_steam.tar.zst ]]; then
+    echo "==> Installing Steam bootstrap archive..."
+    cp /tmp/steam-bootstrap/bootstrap_steam.tar.zst "${STEAM_BOOTSTRAP}"
+else
+    echo "==> Building Steam bootstrap archive..."
+    curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+        --output /tmp/steam_client_steamrt64.manifest \
+        https://client-update.steamstatic.com/steam_client_steamdeck_stable_steamrt64
+    /ctx/tools/steam-bootstrap /tmp/steam_client_steamrt64.manifest "${STEAM_BOOTSTRAP}"
+fi
 
 # -- Set component metadata attributes --
 # Tag the bootstrap archive with component and update-interval for tracking.
