@@ -6,7 +6,6 @@ on:
     branches:
       - testing
       - unstable
-      - feat/steamrt64-bootstrap
     paths:
       - "build_files/tools/steam-bootstrap"
       - ".github/workflows/steam_bootstrap.yml"
