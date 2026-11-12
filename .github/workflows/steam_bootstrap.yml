@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           printf 'FROM scratch\nCOPY bootstrap_steam.tar.zst /\n' > "${RUNNER_TEMP}/out/Containerfile"
-          podman build \
+          podman build --timestamp 0 \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.version=${VERSION}" \
             --tag "${IMAGE}:latest" --tag "${IMAGE}:${VERSION}" \
