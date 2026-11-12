@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# Replace the vendored Steam client manifest with the one Valve currently
+# serves to Steam Deck stable clients.
+#
+# Usage: steam-bootstrap-update [manifest]
+#
+# See build_files/bazzite-deck/steam-bootstrap.md.
+#
+set -euo pipefail
+
+CDN=https://client-update.steamstatic.com
+CHANNEL=steam_client_steamdeck_stable_steamrt64
+MANIFEST="${1:-$(dirname "$(realpath "$0")")/../bazzite-deck/steam_client_steamrt64.manifest}"
+
+NEW="$(mktemp)"
+trap 'rm -f "${NEW}"' EXIT
+
+version() {
+    sed -n 's/^\s*"version"\s*"\([0-9]*\)".*/\1/p' "$1" | head -n 1
+}
+
+curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+    --output "${NEW}" "${CDN}/${CHANNEL}"
+
+if ! grep -q '^"steamrt64"' "${NEW}"; then
+    echo "${CDN}/${CHANNEL} is not a steamrt64 manifest" >&2
+    exit 1
+fi
+
+OLD_VERSION="$(version "${MANIFEST}")"
+NEW_VERSION="$(version "${NEW}")"
+if [[ "${NEW_VERSION}" == "${OLD_VERSION}" ]]; then
+    echo "Already at ${OLD_VERSION} ($(date -u -d "@${OLD_VERSION}" +%F))"
+    exit 0
+fi
+
+sed -n 's/^\s*"file"\s*"\([^"]*\)".*/\1/p' "${NEW}" | while read -r file; do
+    if ! curl --fail --head --silent --output /dev/null "${CDN}/${file}"; then
+        echo "${CDN}/${file} is not downloadable" >&2
+        exit 1
+    fi
+done
+
+cp "${NEW}" "${MANIFEST}"
+echo "Steam client ${OLD_VERSION} ($(date -u -d "@${OLD_VERSION}" +%F)) -> ${NEW_VERSION} ($(date -u -d "@${NEW_VERSION}" +%F))"
