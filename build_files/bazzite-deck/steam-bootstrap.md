@@ -40,13 +40,14 @@ Steam logs where it fetches updates from. In `logs/bootstrap_log.txt` of any
 Steam install:
 
 ```text
-Downloading manifest: https://client-update.fastly.steamstatic.com/steam_client_publicbeta_steamrt64
+Downloading manifest: https://client-update.fastly.steamstatic.com/steam_client_steamrt64
 ```
 
 Manifests live at `https://client-update.steamstatic.com/steam_client_<channel>_<platform>`.
 The channel is empty for stable desktop, or `publicbeta`, `steamdeck_stable` or
-`steamdeck_publicbeta`; the platform is `steamrt64`. Each package entry's `file`
-is downloaded from the same host. Bazzite starts Steam with `-steamdeck`, so it
+`steamdeck_publicbeta`. The platform is `steamrt64` on every channel, stable
+included; `ubuntu12` is the old 32-bit client that the previous bootstrap
+shipped. Each package entry's `file` is downloaded from the same host. Bazzite starts Steam with `-steamdeck`, so it
 reads the `steamdeck_stable` channel.
 
 A Steam install records what it has unpacked in `package/`, next to a copy of
