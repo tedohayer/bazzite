@@ -280,6 +280,11 @@ rm -vf /etc/profile.d/verify_motd.sh
     rm -f /usr/share/backgrounds/default.xml
 )
 
+# Steam's first-run setup asks for the timezone
+if [[ $imageref == *-deck* ]]; then
+    sed -i '/^hidden_webui_pages =/a\    anaconda-screen-date-time' /etc/anaconda/profile.d/bazzite.conf
+fi
+
 # Enable on-screen keyboard
 if [[ $imageref == *-deck* ]]; then
     # Enable keyboard here
