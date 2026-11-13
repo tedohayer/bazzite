@@ -41,20 +41,6 @@ curl -o manifest https://client-update.steamstatic.com/steam_client_steamdeck_st
 ./build_files/tools/steam-bootstrap manifest steam_bootstrap/bootstrap_steam.tar.zst
 ```
 
-## First-run setup
-
-Steam's Game Mode setup (language, timezone, network, update) only runs when
-`config/loginusers.vdf` lists an account and `~/.steam/registry.vdf` has no
-`CompletedOOBEStage1` or `CompletedOOBE` value. A new install has no accounts,
-so the client would skip it. `steam-tweaks` therefore writes a placeholder
-account (`bazzite-setup`) the first time Game Mode starts for a user, and
-removes it once the registry has `CompletedOOBEStage1` set to 1. The deck
-installer hides its own date and time page because of this.
-
-Valve does not document this. When checking a new bootstrap, also boot a fresh
-install into Game Mode: setup should run once and end at the login screen, and
-the next boot should go straight to the login screen.
-
 ## Where the pieces come from
 
 Steam logs where it fetches updates from. In `logs/bootstrap_log.txt` of any
